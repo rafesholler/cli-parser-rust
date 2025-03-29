@@ -24,7 +24,6 @@
 //!     args.next();
 //!     
 //!     let hashmap = parser.parse(&mut args).unwrap();
-//!     assert!(hashmap.contains_key("help"));
 //! }
 //! ```
 
@@ -54,7 +53,7 @@ impl Display for InvalidCommandError {
                 write!(f, "Invalid command, duplicate token '{}'", s)
             },
             InvalidCommandReasons::Missing => {
-                write!(f, "Invalid command, missing token, perhaps you forgot an argument at the end of the command.")
+                write!(f, "Invalid command, missing argument")
             }
         }
     }
@@ -73,7 +72,8 @@ enum InvalidCommandReasons {
 
 #[derive(Clone, Debug)]
 enum ArgTypes {
-    Default,
+    Param(bool),
+    Input,
     Short(char),
     None
 }
@@ -93,9 +93,15 @@ impl Arg {
         Arg { name: String::new(), arg_type: ArgTypes::None, expecting: false} 
     }
 
+    /// A parameter argument, or one that does not expect any argument to come before it.
+    /// Note that the order that these are added to the parser matters.
+    pub fn param(self, name: &str) -> Arg {
+        Arg { name: String::from(name), arg_type: ArgTypes::Param(false), expecting: false }
+    }
+
     /// An argument that expects a string of input to follow afterwards.
     pub fn input(self, name: &str) -> Arg {
-        Arg { name: String::from(name), arg_type: ArgTypes::Default, expecting: true }
+        Arg { name: String::from(name), arg_type: ArgTypes::Input, expecting: true }
     }
 
     /// A flag argument, or one that toggles a setting without excpecting another token afterwards.
@@ -106,6 +112,10 @@ impl Arg {
     /// A short argument, or one that can be called with a single dash and a character as well as the default way.
     pub fn short(self, ch: char) -> Arg {
         Arg { name: self.name, arg_type: ArgTypes::Short(ch), expecting: self.expecting }
+    }
+
+    fn set_used(&mut self, used: bool) {
+        self.arg_type = ArgTypes::Param(used);
     }
 }
 
@@ -141,32 +151,35 @@ impl Parser {
         self.args.borrow().len()
     }
 
+    fn get_err(&self, reason: InvalidCommandReasons) -> Result<HashMap<String, Option<String>>, Box<dyn Error>> {
+        return Err(Box::new(InvalidCommandError::new(reason)))
+    }
 
     /// Parses through the remaining arguments and returns a hashmap of arguments passed and their relevant values.
     pub fn parse(&self, args: &mut impl Iterator<Item = String>) -> Result<HashMap<String, Option<String>>, Box<dyn Error>> {
         let mut hashmap: HashMap<String, Option<String>> = HashMap::new();
         let mut prev_arg: Option<Box<Arg>> = None;
         let mut args = args.peekable();
-        let parse_args = self.args.clone().take();
+        let mut parser_args = self.args.clone().take();
 
         while let Some(c_arg) = args.next() {
             if c_arg.starts_with("-") {
                 // Return error if calling a new argument without providing a follow up argument to the previous one
                 if prev_arg.is_some() {
-                    return Err(Box::new(InvalidCommandError::new(InvalidCommandReasons::Unexpected(c_arg))));
+                    return self.get_err(InvalidCommandReasons::Unexpected(c_arg));
                 }
 
                 if c_arg.starts_with("--") {
                     // Full arg
                     let mut found = false;
-                    for arg in &parse_args {
+                    for arg in &parser_args {
                         if c_arg.ends_with(&arg.name) && c_arg.len() == arg.name.len() + 2 {
                             found = true;
                             if arg.expecting {
                                 prev_arg = Some(Box::new(arg.clone()));
                             } else {
                                 match hashmap.insert(arg.name.clone(), None) {
-                                    Some(_) => return Err(Box::new(InvalidCommandError::new(InvalidCommandReasons::Duplicate(c_arg)))),
+                                    Some(_) => return self.get_err(InvalidCommandReasons::Duplicate(c_arg)),
                                     None => {},
                                 };
                                 prev_arg = None;
@@ -174,12 +187,12 @@ impl Parser {
                         }
                     }
                     if !found {
-                        return Err(Box::new(InvalidCommandError::new(InvalidCommandReasons::Unexpected(c_arg))));
+                        return self.get_err(InvalidCommandReasons::Unexpected(c_arg));
                     }
                 } else {
                     // Short arg
                     let mut found = false;
-                    for arg in &parse_args {
+                    for arg in &parser_args {
                         if let ArgTypes::Short(c) = arg.arg_type {
                             if c_arg.ends_with(c) && c_arg.len() == 2 {
                                 found = true;
@@ -187,7 +200,7 @@ impl Parser {
                                     prev_arg = Some(Box::new(arg.clone()));
                                 } else {
                                     match hashmap.insert(arg.name.clone(), None) {
-                                        Some(_) => return Err(Box::new(InvalidCommandError::new(InvalidCommandReasons::Duplicate(c_arg)))),
+                                        Some(_) => return self.get_err(InvalidCommandReasons::Duplicate(c_arg)),
                                         None => {},
                                     };
                                     prev_arg = None;
@@ -196,30 +209,62 @@ impl Parser {
                         }
                     }
                     if !found {
-                        return Err(Box::new(InvalidCommandError::new(InvalidCommandReasons::Unexpected(c_arg))));
+                        return self.get_err(InvalidCommandReasons::Unexpected(c_arg));
                     }
                 }
             } else {
                 // non-argument token
                 if prev_arg.is_none() {
-                    return Err(Box::new(InvalidCommandError::new(InvalidCommandReasons::Unexpected(c_arg))));
-                }
+                    // params
+                    let mut found = false;
+                    for arg in &mut parser_args {
+                        if let ArgTypes::Param(used) = arg.arg_type {
+                            if used {
+                                continue;
+                            }
+                            
+                            match hashmap.insert(arg.name.clone(), Some(c_arg.clone())) {
+                                Some (_) => return self.get_err(InvalidCommandReasons::Duplicate(c_arg)),
+                                None => {}
+                            };
+                            arg.set_used(true);
+                            prev_arg = None;
+                            found = true;
+                            break;
+                        }
+                    }
 
-                match hashmap.insert(prev_arg.unwrap().name, Some(c_arg.clone())) {
-                    Some (_) => return Err(Box::new(InvalidCommandError::new(InvalidCommandReasons::Duplicate(c_arg)))),
-                    None => {}
+                    if !found {
+                        return self.get_err(InvalidCommandReasons::Unexpected(c_arg));
+                    }
+                } else {
+                    println!("{:?}", prev_arg);
+                    match hashmap.insert(prev_arg.unwrap().name, Some(c_arg.clone())) {
+                        Some (_) => return self.get_err(InvalidCommandReasons::Duplicate(c_arg)),
+                        None => {}
+                    }
+                    prev_arg = None;
                 }
-                prev_arg = None;
             };
 
             if args.peek().is_none() && prev_arg.is_some() {
-                return Err(Box::new(InvalidCommandError::new(InvalidCommandReasons::Missing)));
+                return self.get_err(InvalidCommandReasons::Missing);
             }
         }
+
+        for arg in parser_args {
+            if let ArgTypes::Param(false) = arg.arg_type {
+                return self.get_err(InvalidCommandReasons::Missing);
+            }
+        }
+
         Ok(hashmap)
     }
 }
 
+
+
+// Tests
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -247,6 +292,22 @@ mod tests {
             assert!(false);
         }
         assert_eq!(flag.name, "flag");
+
+        let mut param = Arg::new().param("param");
+        assert_eq!(param.expecting, false);
+        if let ArgTypes::Param(used) = param.arg_type {
+            assert!(!used);
+        } else {
+            assert!(false);
+        }
+        assert_eq!(param.name, "param");
+
+        param.set_used(true);
+        if let ArgTypes::Param(used) = param.arg_type {
+            assert!(used);
+        } else {
+            assert!(false);
+        }
     }
 
     #[test]
@@ -268,12 +329,14 @@ mod tests {
         let default = Arg::new().input("default");
         let short = Arg::new().input("short").short('s');
         let flag = Arg::new().flag("flag").short( 'f');
+        let param1 = Arg::new().param("p1");
+        let param2 = Arg::new().param("p2");
 
         let parser = Parser::new();
-        parser.add_args(&mut vec![default, short, flag]);
+        parser.add_args(&mut vec![default, short, flag, param1, param2]);
 
         // Tests err on duplicate value
-        let mut cmd = "--short short_inp -s s_inp"
+        let mut cmd = "--short short_inp -s s_inp p1 p2"
             .split_whitespace()
             .map(|s| { String::from(s) });
 
@@ -281,7 +344,7 @@ mod tests {
         assert!(res.is_err());
         
         // Tests err on invalid command order
-        let mut cmd = "--default -f"
+        let mut cmd = "--default -f p1 p2"
             .split_whitespace()
             .map(|s| { String::from(s) });
 
@@ -289,20 +352,37 @@ mod tests {
         assert!(res.is_err());
 
         // Tests err on unexpected token
-        let mut cmd = "-f dsjfhkjuh"
+        let mut cmd = "p1 p2 -f dsjfhkjuh"
         .split_whitespace()
         .map(|s| { String::from(s) });
 
-    let res = parser.parse(&mut cmd);
-    assert!(res.is_err());
+        let res = parser.parse(&mut cmd);
+        assert!(res.is_err());
 
-    // Tests err on missing token
-        let mut cmd = "--default"
+        // Tests err on missing token
+        let mut cmd = "p1 p2 --default"
             .split_whitespace()
             .map(|s| { String::from(s) });
 
         let res = parser.parse(&mut cmd);
         assert!(res.is_err());
+
+        // Tests err on missing param
+        let mut cmd = "p1 -f"
+            .split_whitespace()
+            .map(|s| { String::from(s) });
+
+        let res = parser.parse(&mut cmd);
+        assert!(res.is_err());
+
+        // Tests err on unrecognized arg
+        let mut cmd = "p1 p2 --doesntexist"
+            .split_whitespace()
+            .map(|s| { String::from(s) });
+
+        let res = parser.parse(&mut cmd);
+        assert!(res.is_err());
+
     }
 
     #[test]
@@ -310,11 +390,13 @@ mod tests {
         let default = Arg::new().input("default");
         let short = Arg::new().input("short").short('s');
         let flag = Arg::new().flag("flag").short( 'f');
+        let param1 = Arg::new().param("file");
+        let param2 = Arg::new().param("path");
 
         let parser = Parser::new();
-        parser.add_args(&mut vec![default, short, flag]);
+        parser.add_args(&mut vec![default, short, flag, param1, param2]);
 
-        let mut cmd = "--default def_arg -s s_arg -f"
+        let mut cmd = "--default def_arg filename -s s_arg -f pathname"
             .split_whitespace()
             .map(|s| { String::from(s) });
 
@@ -322,11 +404,16 @@ mod tests {
         assert!(res.is_ok());
 
         let res = res.unwrap();
-        assert_eq!(res.len(), 3);
+        assert_eq!(res.len(), 5);
         assert!(res.contains_key("default"));
         assert_eq!(res.get("default").unwrap(), &Some(String::from("def_arg")));
         assert!(res.contains_key("short"));
         assert_eq!(res.get("short").unwrap(), &Some(String::from("s_arg")));
         assert!(res.contains_key("flag"));
+        assert_eq!(res.get("flag").unwrap(), &None);
+        assert!(res.contains_key("file"));
+        assert_eq!(res.get("file").unwrap(), &Some(String::from("filename")));
+        assert!(res.contains_key("path"));
+        assert_eq!(res.get("path").unwrap(), &Some(String::from("pathname")));
     }
 }
