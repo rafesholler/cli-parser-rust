@@ -1,3 +1,33 @@
+//! A crate for parsing commands and arguemnts passed to the console.
+//! 
+//! This can parse commands with various arguments.
+//! It currently only supports option arguments (or args beginning with a "-"),
+//! but an update for regular params and argument rules (like ordering) will be coming soon.
+//! 
+//! ## Getting Started
+//! To start, create a new [`Parser`] struct and add a couple of [`Arg`]s to it using the
+//! [`Parser::add_arg()`] or [`Parser::add_args()`] methods.
+//! Then, call the [`Parser::parse()`] method with [`std::env::Args`] passed in.
+//! 
+//! ```
+//! use cli_parser::{ Parser, Arg };
+//! use std::env;
+//! 
+//! fn main() {
+//!     let parser = Parser::new();
+//!     let my_arg = Arg::new().flag("help").short('h');
+//!     parser.add_arg(my_arg);
+//!     
+//!     let mut args = env::args();
+//! 
+//!     // Don't include the first argument
+//!     args.next();
+//!     
+//!     let hashmap = parser.parse(&mut args).unwrap();
+//!     assert!(hashmap.contains_key("help"));
+//! }
+//! ```
+
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::error::Error;
@@ -79,6 +109,7 @@ impl Arg {
     }
 }
 
+/// A struct that parses the command line for certain user-defined args.
 pub struct Parser {
     args: RefCell<Vec<Arg>>,
 }
