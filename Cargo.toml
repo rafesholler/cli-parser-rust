@@ -1,6 +1,6 @@
 [package]
 name = "cli_parser"
-authors = ["RafeS"]
+authors = ["rafesholler"]
 version = "0.1.0"
 edition = "2024"
 description = "A crate for parsing commands and arguemnts passed to the console."
