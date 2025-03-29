@@ -1,6 +1,10 @@
 [package]
-name = "cli-parser"
+name = "cli_parser"
+authors = ["RafeS"]
 version = "0.1.0"
 edition = "2024"
+description = "A crate for parsing commands and arguemnts passed to the console."
+readme = "README.md"
+repository = "https://github.com/rafesholler/cli-parser-rust"
 
 [dependencies]
