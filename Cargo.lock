@@ -3,5 +3,5 @@
 version = 4
 
 [[package]]
-name = "cli_parser"
+name = "simple-cli-parser"
 version = "0.1.0"
