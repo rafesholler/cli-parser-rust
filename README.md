@@ -6,8 +6,11 @@ Note that order is important for required parameters, but not for optional argum
 
 ## Installation
 Run the following Cargo command in your project directory:
+
 ```cargo add simple-cli-parser```
+
 Or add the following line to your Cargo.toml:
+
 ```simple-cli-parser = "0.1.0"```
 
 ## Example Usage
