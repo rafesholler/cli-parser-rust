@@ -119,7 +119,6 @@ impl Parser {
         let parse_args = self.args.clone().take();
 
         while let Some(c_arg) = args.next() {
-            println!("{:?}", prev_arg);
             if c_arg.starts_with("-") {
                 // Return error if calling a new argument without providing a follow up argument to the previous one
                 if prev_arg.is_some() {
@@ -144,7 +143,6 @@ impl Parser {
                         }
                     }
                     if !found {
-                        println!("Didnt't find!");
                         return Err(Box::new(InvalidCommandError::new(InvalidCommandReasons::Unexpected(c_arg))));
                     }
                 } else {
@@ -153,7 +151,6 @@ impl Parser {
                     for arg in &parse_args {
                         if let ArgTypes::Short(c) = arg.arg_type {
                             if c_arg.ends_with(c) && c_arg.len() == 2 {
-                                println!("{}", arg.expecting);
                                 found = true;
                                 if arg.expecting {
                                     prev_arg = Some(Box::new(arg.clone()));
@@ -168,14 +165,12 @@ impl Parser {
                         }
                     }
                     if !found {
-                        println!("Unexpected 1!");
                         return Err(Box::new(InvalidCommandError::new(InvalidCommandReasons::Unexpected(c_arg))));
                     }
                 }
             } else {
                 // non-argument token
                 if prev_arg.is_none() {
-                    println!("Unexpected 2!");
                     return Err(Box::new(InvalidCommandError::new(InvalidCommandReasons::Unexpected(c_arg))));
                 }
 
@@ -187,7 +182,6 @@ impl Parser {
             };
 
             if args.peek().is_none() && prev_arg.is_some() {
-                println!("Missing!");
                 return Err(Box::new(InvalidCommandError::new(InvalidCommandReasons::Missing)));
             }
         }
