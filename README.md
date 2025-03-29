@@ -1,4 +1,4 @@
-# CLI_Parser
+# Simple_CLI_Parser
 A crate for parsing commands and arguemnts passed to the console.
  
 This can parse commands from `std::env::args()` with various arguments. It currently supports optional arguments (both short and long) as well as required parameters.
