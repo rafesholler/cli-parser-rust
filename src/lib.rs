@@ -63,19 +63,19 @@ impl Arg {
         Arg { name: String::new(), arg_type: ArgTypes::None, expecting: false} 
     }
 
-    /// A default argument, or one that can be called with two dashes.
-    pub fn default(self, name: &str) -> Arg {
+    /// An argument that expects a string of input to follow afterwards.
+    pub fn input(self, name: &str) -> Arg {
         Arg { name: String::from(name), arg_type: ArgTypes::Default, expecting: true }
     }
 
-    /// A short argument, or one that can be called with a single dash and a character as well as the default way.
-    pub fn short(self, name: &str, ch: char) -> Arg {
-        Arg { name: String::from(name), arg_type: ArgTypes::Short(ch), expecting: self.expecting }
+    /// A flag argument, or one that toggles a setting without excpecting another token afterwards.
+    pub fn flag(self, name: &str) -> Arg {
+        Arg { name: String::from(name), arg_type: self.arg_type, expecting: false }
     }
 
-    /// A flag argument, or one that toggles a setting without excpecting another token afterwards.
-    pub fn flag(self) -> Arg {
-        Arg { name: self.name, arg_type: self.arg_type, expecting: false }
+    /// A short argument, or one that can be called with a single dash and a character as well as the default way.
+    pub fn short(self, ch: char) -> Arg {
+        Arg { name: self.name, arg_type: ArgTypes::Short(ch), expecting: self.expecting }
     }
 }
 
@@ -120,25 +120,26 @@ impl Parser {
 
         while let Some(c_arg) = args.next() {
             println!("{:?}", prev_arg);
-            prev_arg = if c_arg.starts_with("-") {
+            if c_arg.starts_with("-") {
                 // Return error if calling a new argument without providing a follow up argument to the previous one
                 if prev_arg.is_some() {
                     return Err(Box::new(InvalidCommandError::new(InvalidCommandReasons::Unexpected(c_arg))));
                 }
 
                 if c_arg.starts_with("--") {
+                    // Full arg
                     let mut found = false;
                     for arg in &parse_args {
-                        println!("c_arg: {}, arg: {}, ends: {}, len: {}", c_arg, arg.name, c_arg.ends_with(&arg.name), c_arg.len() == arg.name.len() + 2);
                         if c_arg.ends_with(&arg.name) && c_arg.len() == arg.name.len() + 2 {
                             found = true;
                             if arg.expecting {
-                                Some(Box::new(arg));
+                                prev_arg = Some(Box::new(arg.clone()));
                             } else {
                                 match hashmap.insert(arg.name.clone(), None) {
                                     Some(_) => return Err(Box::new(InvalidCommandError::new(InvalidCommandReasons::Duplicate(c_arg)))),
                                     None => {},
                                 };
+                                prev_arg = None;
                             }
                         }
                     }
@@ -146,20 +147,22 @@ impl Parser {
                         println!("Didnt't find!");
                         return Err(Box::new(InvalidCommandError::new(InvalidCommandReasons::Unexpected(c_arg))));
                     }
-                    None
                 } else {
+                    // Short arg
                     let mut found = false;
                     for arg in &parse_args {
                         if let ArgTypes::Short(c) = arg.arg_type {
                             if c_arg.ends_with(c) && c_arg.len() == 2 {
+                                println!("{}", arg.expecting);
                                 found = true;
                                 if arg.expecting {
-                                    Some(Box::new(arg));
+                                    prev_arg = Some(Box::new(arg.clone()));
                                 } else {
                                     match hashmap.insert(arg.name.clone(), None) {
                                         Some(_) => return Err(Box::new(InvalidCommandError::new(InvalidCommandReasons::Duplicate(c_arg)))),
                                         None => {},
                                     };
+                                    prev_arg = None;
                                 }
                             }
                         }
@@ -168,7 +171,6 @@ impl Parser {
                         println!("Unexpected 1!");
                         return Err(Box::new(InvalidCommandError::new(InvalidCommandReasons::Unexpected(c_arg))));
                     }
-                    None
                 }
             } else {
                 // non-argument token
@@ -181,7 +183,7 @@ impl Parser {
                     Some (_) => return Err(Box::new(InvalidCommandError::new(InvalidCommandReasons::Duplicate(c_arg)))),
                     None => {}
                 }
-                None
+                prev_arg = None;
             };
 
             if args.peek().is_none() && prev_arg.is_some() {
@@ -199,19 +201,20 @@ mod tests {
 
     #[test]
     fn create_arg() {
-        let default = Arg::new().default("default");
+        let default = Arg::new().input("default");
         assert_eq!(default.name, "default");
         assert_eq!(default.expecting, true);
         
-        let short = Arg::new().short("short", 's');
+        let short = Arg::new().input("short").short('s');
         assert_eq!(short.name, "short");
         if let ArgTypes::Short(c) = short.arg_type {
             assert_eq!(c, 's');
         } else {
             assert!(false);
         }
+        assert_eq!(short.expecting, true);
 
-        let flag = Arg::new().flag().short("flag", 'f');
+        let flag = Arg::new().flag("flag").short( 'f');
         assert_eq!(flag.expecting, false);
         if let ArgTypes::Short(c) = flag.arg_type {
             assert_eq!(c, 'f');
@@ -223,9 +226,9 @@ mod tests {
 
     #[test]
     fn append_args() {
-        let default = Arg::new().default("default");
-        let short = Arg::new().short("short", 's');
-        let flag = Arg::new().flag().short("flag", 'f');
+        let default = Arg::new().input("default");
+        let short = Arg::new().input("short").short('s');
+        let flag = Arg::new().flag("flag").short( 'f');
 
         let parser = Parser::new();
         parser.add_arg(default);
@@ -237,9 +240,9 @@ mod tests {
 
     #[test]
     fn test_parse_err() {
-        let default = Arg::new().default("default");
-        let short = Arg::new().short("short", 's');
-        let flag = Arg::new().flag().short("flag", 'f');
+        let default = Arg::new().input("default");
+        let short = Arg::new().input("short").short('s');
+        let flag = Arg::new().flag("flag").short( 'f');
 
         let parser = Parser::new();
         parser.add_args(&mut vec![default, short, flag]);
@@ -279,9 +282,9 @@ mod tests {
 
     #[test]
     pub fn test_parse_success() {
-        let default = Arg::new().default("default");
-        let short = Arg::new().short("short", 's');
-        let flag = Arg::new().flag().short("flag", 'f');
+        let default = Arg::new().input("default");
+        let short = Arg::new().input("short").short('s');
+        let flag = Arg::new().flag("flag").short( 'f');
 
         let parser = Parser::new();
         parser.add_args(&mut vec![default, short, flag]);
