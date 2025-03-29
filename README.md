@@ -1,7 +1,28 @@
 # CLI_Parser
 A crate for parsing commands and arguemnts passed to the console.
  
-This can parse commands with various arguments. It currently only supports option arguments (or args beginning with a "-"), but an update for regular params and argument rules (like ordering) will be coming soon.
+This can parse commands from `std::env::args()` with various arguments. It currently supports optional arguments (both short and long) as well as required parameters.
+Note that order is important for required parameters, but not for optional arguments.
 
 ## Installation
-There is currently no way to install this package. Once it is published on [crates.io](https://crates.io/) it will be available for installation.
+Run the following Cargo command in your project directory:
+```cargo add simple-cli-parser```
+Or add the following line to your Cargo.toml:
+```simple-cli-parser = "0.1.0"```
+
+## Example Usage
+```rust
+use simple_cli_parser::*;
+
+fn main() {
+    let parser = Parser::new();
+    let arg = Arg::new().param("num");
+    parser.add_arg(arg);
+
+    let mut args = std::env::args();
+    args.next();
+
+    let hashmap = parser.parse(&mut args).unwrap();
+    println!("{}", hashmap.get("num"));
+}
+```
